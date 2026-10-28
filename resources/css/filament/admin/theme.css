@@ -1,0 +1,9 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@config 'tailwind.config.js';
+
+/* Mengubah background header/topbar menjadi Zinc */
+.fi-topbar, 
+.fi-topbar nav {
+    @apply bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 !important;
+}
