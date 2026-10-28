@@ -1,192 +1,159 @@
-# Card Layout Generator (Laravel 12 + Filament v3)
+<div align="center">
 
-Aplikasi untuk membuat **kartu berukuran 90 × 55 mm** (ukuran kartu standar), lalu menata otomatis ke dalam **lembar A3 cetak 480 × 320 mm** dengan target **28 kartu per lembar**. Setiap kartu memiliki **QR Code** unik, dan nomor kartu dapat diinput **massal lewat file Excel**.
+# Card Layout Generator — BUKA LUWUR 1448 / 2026
 
----
+<a href="https://laravel.com" target="_blank"><img src="https://img.shields.io/badge/Laravel-12-FF2D20?style=for-the-badge&logo=laravel&logoColor=white" alt="Laravel 12"></a>
+<a href="https://livewire.laravel.com" target="_blank"><img src="https://img.shields.io/badge/Livewire-3-FB70A9?style=for-the-badge&logo=livewire&logoColor=white" alt="Livewire 3"></a>
+<a href="https://filamentphp.com" target="_blank"><img src="https://img.shields.io/badge/FilamentPHP-3-FDAE4B?style=for-the-badge&logoColor=white" alt="FilamentPHP 3"></a>
+<img src="https://img.shields.io/badge/PHP-8.2+-777BB4?style=for-the-badge&logo=php&logoColor=white" alt="PHP 8.2+">
 
-## Daftar Isi
+</div>
 
-1. [Fitur Utama](#fitur-utama)
-2. [Teknologi](#teknologi)
-3. [Catatan Penting Ukuran Kartu](#catatan-penting-ukuran-kartu)
-4. [Instalasi](#instalasi)
-5. [Konfigurasi](#konfigurasi)
-6. [Struktur Proyek](#struktur-proyek)
-7. [Format File Excel](#format-file-excel)
-8. [Alur Penggunaan](#alur-penggunaan)
-9. [Contoh Implementasi](#contoh-implementasi)
-10. [Tips Cetak](#tips-cetak)
-11. [Roadmap](#roadmap)
+Aplikasi berbasis **Laravel 12 + Filament v3** untuk membuat kartu berukuran **90 × 55 mm** (ukuran kartu standar) dengan **QR Code unik per nomor**, lalu menatanya otomatis ke lembar cetak **480 × 325 mm** dengan kapasitas **28 kartu per lembar**. Nomor kartu dapat diimpor massal lewat file Excel, dan hasilnya diekspor sebagai PDF siap cetak.
 
 ---
 
-## Fitur Utama
+## Fitur
 
-- Panel admin berbasis **Filament v3**
-- **Import nomor kartu dari Excel** (`.xlsx`, `.xls`, `.csv`)
-- **QR Code generator** otomatis per nomor kartu (SVG/PNG, vektor untuk cetak tajam)
-- **Layout engine**: menghitung otomatis jumlah kolom × baris pada lembar 480 × 320 mm
-- **Export PDF** siap cetak (ukuran halaman tepat 480 × 320 mm) dengan crop mark opsional
-- Pembagian otomatis ke beberapa lembar (misal 100 kartu → 4 lembar, 28 kartu per lembar)
-- Preview layout di panel sebelum cetak
-- Ukuran kartu, ukuran lembar, margin, gap, dan jumlah per lembar dapat diatur lewat `.env`
+- **Panel admin Filament v3** (`/admin`) dengan login bawaan
+- **Dua jenis kartu**: **Kartu K** dan **Kartu B**, masing-masing punya data nomor sendiri
+- **Import nomor dari Excel** (`.xlsx` / `.xls`) langsung dari tabel Kartu K / Kartu B
+  - Toleran terhadap nama kolom (`nomor`, `no`, `number`)
+  - Duplikat (di database maupun di dalam file) dan baris kosong otomatis dilewati
+  - Import Kartu K dibaca per 500 baris (chunk + batch insert) sehingga aman untuk file besar
+- **QR Code otomatis** per nomor kartu (SVG, vektor → tetap tajam saat dicetak)
+  - Generate satu per satu, terpilih (bulk), atau **Generate Semua QR** sekaligus
+  - Preview QR langsung di tabel dan lewat modal
+- **Template kartu**: unggah gambar desain kartu (maks. 5 MB), dipakai sebagai latar tiap kartu
+- **Layout engine**: kartu ditata otomatis ke lembar 480 × 325 mm (lihat bagian [Tata Letak](#tata-letak-lembar-cetak))
+- **Pembagian otomatis ke banyak lembar**: jumlah kartu dipecah per 28 kartu → 1 halaman PDF per lembar
+- **Export PDF** (DomPDF) dengan ukuran halaman tepat 480 × 325 mm, tampil langsung di browser
+- **Preview HTML** dengan tombol cetak langsung dari browser
 
-## Teknologi
+---
 
-| Komponen | Versi |
+## Tech Stack
+
+| Komponen | Keterangan |
 |---|---|
-| PHP | 8.4 |
-| Laravel | 12.x |
-| Filament | 3.x |
+| Framework | Laravel 12 (PHP 8.2+) |
+| Admin panel | Filament v3 |
+| Reaktivitas UI | Livewire 3 (dibawa otomatis oleh Filament v3) |
 | Import Excel | `maatwebsite/excel` |
-| QR Code | `endroid/qr-code` (atau `simplesoftwareio/simple-qrcode`) |
-| PDF | `barryvdh/laravel-dompdf` (alternatif: `spatie/laravel-pdf` + Browsershot) |
-| Database | MySQL 8 / MariaDB / PostgreSQL / SQLite |
-
-Ekstensi PHP yang dibutuhkan: `gd`, `zip`, `xml`, `mbstring`, `intl`, `bcmath`, `fileinfo`.
-
----
-
-## Catatan Penting Ukuran Kartu
-
-> Baca bagian ini sebelum mulai, karena memengaruhi hasil layout.
-
-Spesifikasi awal: kartu **90 × 55 mm**, lembar **480 × 320 mm**, target **28 kartu**.
-
-Hasil perhitungan geometri (tanpa margin dan gap):
-
-| Orientasi kartu | Kolom × Baris | Total muat |
-|---|---|---|
-| Landscape (90 × 55) | 5 × 5 | **25** |
-| Portrait (55 × 90) | 8 × 3 | **24** |
-| Campuran (landscape + portrait) | 4×5 + 2×3 | **26** |
-
-Artinya **28 kartu 90 × 55 mm tidak muat** di 480 × 320 mm tanpa mengecilkan kartu. Pilihan yang tersedia:
-
-1. **Ubah ukuran kartu** agar muat grid 7 × 4 = 28 (sel maksimal ±68,5 × 80 mm), misalnya kartu **55 × 80 mm** (portrait).
-2. **Ubah ukuran lembar** (misalnya A3+/SRA3 lebih besar) atau **kurangi jumlah** menjadi 25 kartu per lembar.
-3. Jika yang dimaksud adalah kartu **9 × 55 mm** (bukan 90 × 55), grid 28 kartu sangat longgar dan tinggal diatur `CARD_WIDTH_MM=9`.
-
-Semua nilai ini diatur di `.env`, dan aplikasi akan **menampilkan peringatan** jika kapasitas lembar lebih kecil dari jumlah kartu yang diminta.
+| QR Code | `simplesoftwareio/simple-qrcode` (output SVG) |
+| PDF | `barryvdh/laravel-dompdf` |
+| Database | SQLite (default), bisa diganti MySQL/PostgreSQL lewat `.env` |
 
 ---
 
 ## Instalasi
 
-### 1. Buat proyek
+> Jika repository belum menyertakan `composer.json`, jalankan `composer require` seperti pada langkah 2. Jika sudah ada, cukup `composer install`.
 
 ```bash
-composer create-project laravel/laravel card-generator "^12.0"
-cd card-generator
-```
+# 1. Clone repository, lalu masuk ke foldernya
+git clone https://github.com/rohmanzm11/Card-Layout-Generator.git
+cd Card-Layout-Generator
 
-Pastikan versi PHP:
+# 2. Install dependency
+composer install
 
-```bash
-php -v   # PHP 8.4.x
-```
+# Jika composer.json belum ada / paket belum terpasang:
+composer require filament/filament:"^3.0" \
+    maatwebsite/excel \
+    simplesoftwareio/simple-qrcode \
+    barryvdh/laravel-dompdf
 
-### 2. Install dependensi
+# 3. Siapkan environment
+cp .env.example .env
+php artisan key:generate
 
-```bash
-composer require filament/filament:"^3.3" -W
-composer require maatwebsite/excel
-composer require endroid/qr-code
-composer require barryvdh/laravel-dompdf
-```
-
-### 3. Setup Filament
-
-```bash
-php artisan filament:install --panels
-# Pilih panel id: admin
-php artisan make:filament-user
-```
-
-### 4. Konfigurasi database
-
-Edit `.env`:
-
-```env
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=card_generator
-DB_USERNAME=root
-DB_PASSWORD=
-```
-
-### 5. Migrasi & storage
-
-```bash
+# 4. Siapkan database (default: SQLite)
+touch database/database.sqlite
 php artisan migrate
+
+# 5. Link storage agar gambar template bisa diakses
 php artisan storage:link
-```
 
-### 6. Jalankan
+# 6. Buat akun admin
+php artisan make:filament-user
 
-```bash
+# 7. Jalankan
 php artisan serve
 ```
 
-Buka `http://localhost:8000/admin`.
+Buka `http://localhost:8000` — otomatis diarahkan ke `/admin/login`.
+
+### Ekstensi PHP yang dibutuhkan
+
+`gd`, `zip`, `xml`, `mbstring`, `fileinfo`, `sqlite3` (atau driver DB yang dipakai).
 
 ---
 
-## Konfigurasi
+## Cara Penggunaan
 
-Tambahkan di `.env`:
+### 1. Siapkan Template
+Menu **Master → Template**: isi `Nama Batch` dan unggah gambar desain kartu (rasio 90 × 55 mm). Gambar akan diregangkan penuh menutupi tiap kartu.
 
-```env
-# Ukuran kartu (mm)
-CARD_WIDTH_MM=90
-CARD_HEIGHT_MM=55
+### 2. Import Nomor Kartu
+Menu **Kartu → Kartu K** atau **Kartu B** → tombol **Import Excel**.
 
-# Ukuran lembar cetak (mm)
-SHEET_WIDTH_MM=480
-SHEET_HEIGHT_MM=320
+Format file Excel — baris pertama wajib berisi header `nomor`:
 
-# Jumlah kartu target per lembar
-CARDS_PER_SHEET=28
+| nomor |
+|-------|
+| 1001  |
+| 1002  |
+| 1003  |
 
-# Tata letak
-SHEET_MARGIN_MM=5
-CARD_GAP_MM=0
-ALLOW_ROTATE=true
-CROP_MARKS=true
+Hasil import ditampilkan sebagai notifikasi: jumlah berhasil dan jumlah dilewati (duplikat/kosong).
 
-# QR Code
-QR_SIZE_MM=25
-QR_PREFIX=
-QR_ERROR_CORRECTION=medium
+> **Catatan:** Import hanya mengisi kolom `nomor`. QR Code dibuat di langkah berikutnya.
+
+### 3. Generate QR Code
+Pada tabel Kartu K / Kartu B:
+- **Generate Semua QR** — isi QR untuk semua kartu yang belum punya
+- **Generate QR** per baris, atau **Generate QR Terpilih** (bulk)
+- **Preview QR** untuk melihat hasilnya
+
+Isi QR Code = nomor kartu (`qr_code` diisi sama dengan `nomor`).
+
+### 4. Export / Cetak
+Ada dua cara:
+
+**a. Halaman Export Kartu** (menu **Printing → Export Kartu**)
+Pilih **Nomor Awal**, **Jumlah**, dan **Template** untuk Kartu K (kiri) atau Kartu B (kanan), lalu klik export. PDF langsung terbuka di browser.
+
+**b. Print Kartu** (menu **Printing → Print Kartu**)
+Buat record cetak (jenis, kartu awal, jumlah, template), lalu klik **Lihat** untuk membuka PDF.
+
+Batas jumlah per proses: **Kartu K maks. 5.040** (180 lembar), **Kartu B maks. 5.000**.
+
+Contoh: 100 kartu → 4 lembar (28 + 28 + 28 + 16).
+
+---
+
+## Tata Letak Lembar Cetak
+
+Ukuran halaman: **480 × 325 mm (landscape)**, margin 0, offset grid **15 mm kiri** dan **5 mm atas**.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ 5 kolom × 4 baris  = 20 kartu (90 × 55 mm, tegak lurus)   │
+│ ┌────┬────┬────┬────┬────┐                                │
+│ │ 1  │ 2  │ 3  │ 4  │ 5  │                                │
+│ ├────┼────┼────┼────┼────┤                                │
+│ │ …  │    │    │    │ 20 │                                │
+│ └────┴────┴────┴────┴────┘                                │
+│ 8 kolom × 1 baris = 8 kartu (diputar 90°, slot 55 × 90 mm)│
+│ ┌──┬──┬──┬──┬──┬──┬──┬──┐                                 │
+│ │21│22│23│24│25│26│27│28│                                 │
+│ └──┴──┴──┴──┴──┴──┴──┴──┘                                 │
+└──────────────────────────────────────────────────────────┘
+        Total: 20 + 8 = 28 kartu per lembar
 ```
 
-Buat file `config/card.php`:
-
-```php
-<?php
-
-return [
-    'card' => [
-        'width'  => (float) env('CARD_WIDTH_MM', 90),
-        'height' => (float) env('CARD_HEIGHT_MM', 55),
-    ],
-    'sheet' => [
-        'width'  => (float) env('SHEET_WIDTH_MM', 480),
-        'height' => (float) env('SHEET_HEIGHT_MM', 320),
-        'margin' => (float) env('SHEET_MARGIN_MM', 5),
-        'gap'    => (float) env('CARD_GAP_MM', 0),
-        'per_sheet' => (int) env('CARDS_PER_SHEET', 28),
-        'allow_rotate' => (bool) env('ALLOW_ROTATE', true),
-        'crop_marks'   => (bool) env('CROP_MARKS', true),
-    ],
-    'qr' => [
-        'size'   => (float) env('QR_SIZE_MM', 25),
-        'prefix' => env('QR_PREFIX', ''),
-        'ecc'    => env('QR_ERROR_CORRECTION', 'medium'),
-    ],
-];
-```
+QR Code berukuran sekitar 17–20 mm, ditempatkan di area kanan-tengah kartu, dengan nomor kartu tercetak di bawahnya. Posisi dapat disesuaikan di CSS `.qr-box` pada `resources/views/print-kartu/pdf.blade.php` (dan `preview.blade.php`) sesuai desain template Anda.
 
 ---
 
@@ -195,295 +162,57 @@ return [
 ```
 app/
 ├── Filament/
+│   ├── Pages/ExportKartu.php          # Halaman export (form K & B)
 │   └── Resources/
-│       ├── CardResource.php            # CRUD kartu + tombol Import Excel
-│       └── PrintBatchResource.php      # Batch cetak + preview + export PDF
+│       ├── KartuKResource.php         # CRUD + import + generate QR Kartu K
+│       ├── KartuBResource.php         # CRUD + import + generate QR Kartu B
+│       ├── TemplateResource.php       # Master template gambar
+│       └── PrintKartuResource.php     # Riwayat/pengaturan cetak
+├── Http/Controllers/Printkartucontroller.php   # Susun data QR + render PDF/preview
 ├── Imports/
-│   └── CardsImport.php                 # Import nomor dari Excel
-├── Models/
-│   ├── Card.php
-│   └── PrintBatch.php
-├── Services/
-│   ├── LayoutCalculator.php            # Hitung grid kartu pada lembar
-│   ├── QrCodeService.php               # Generate QR (SVG/PNG)
-│   └── SheetPdfService.php             # Render PDF per lembar
-config/
-└── card.php
-resources/views/pdf/
-└── sheet.blade.php                     # Template lembar cetak
+│   ├── KartuKImport.php               # Import Excel Kartu K (chunk 500)
+│   └── KartuBImport.php               # Import Excel Kartu B
+├── Models/                            # KartuK, KartuB, Template, PrintKartu, User
+└── Providers/Filament/AdminPanelProvider.php
+
+resources/views/
+├── print-kartu/pdf.blade.php          # Layout PDF 480×325 mm (28 kartu/halaman)
+├── print-kartu/preview.blade.php      # Preview HTML + tombol print
+└── filament/…                         # View halaman Filament & modal QR
+
+routes/web.php                         # Route preview & download PDF
 ```
 
----
+### Skema Database
 
-## Format File Excel
+| Tabel | Kolom utama |
+|---|---|
+| `kartu_k_s` | `id`, `nomor`, `qr_code` |
+| `kartu_b_s` | `id`, `nomor`, `qr_code` |
+| `templates` | `id`, `nama_batch`, `gambar` |
+| `print_kartus` | `id`, `jenis_kartu` (K/B), `kartu_k_s_id`, `kartu_b_s_id`, `jumlah`, `template_id` |
 
-Baris pertama adalah header. Kolom minimal: `nomor`.
+### Routes
 
-| nomor | nama | keterangan |
+| Method | URL | Fungsi |
 |---|---|---|
-| 0001 | Budi Santoso | Peserta A |
-| 0002 | Siti Aminah | Peserta B |
-| 0003 | Andi Wijaya | Peserta C |
-
-Aturan:
-
-- Kolom `nomor` **wajib** dan **unik**.
-- Format kolom `nomor` sebaiknya **Text** agar angka nol di depan (`0001`) tidak hilang.
-- Kolom `nama` dan `keterangan` opsional.
-- Baris duplikat atau kosong akan dilewati dan dilaporkan setelah import.
+| GET | `/` | Redirect ke `/admin/login` |
+| GET | `/print-kartu/{record}/preview` | Preview HTML siap print |
+| GET | `/print-kartu/{record}/download` | PDF (tampil inline di browser) |
 
 ---
 
-## Alur Penggunaan
+## Catatan & Tips
 
-1. Login ke `/admin`.
-2. Buka menu **Kartu** → klik **Import Excel** → unggah file.
-3. Buka menu **Batch Cetak** → **Buat Batch** → pilih kartu (atau seluruh kartu baru).
-4. Klik **Preview Layout** untuk melihat susunan di lembar 480 × 320 mm.
-5. Klik **Export PDF** → hasil berupa 1 PDF multi-halaman (1 halaman = 1 lembar).
-6. Cetak di ukuran **100% / Actual Size** (jangan *fit to page*).
-
----
-
-## Contoh Implementasi
-
-### Migrasi
-
-```php
-Schema::create('cards', function (Blueprint $table) {
-    $table->id();
-    $table->string('number')->unique();
-    $table->string('name')->nullable();
-    $table->string('note')->nullable();
-    $table->timestamp('printed_at')->nullable();
-    $table->timestamps();
-});
-
-Schema::create('print_batches', function (Blueprint $table) {
-    $table->id();
-    $table->string('title');
-    $table->unsignedInteger('total_cards')->default(0);
-    $table->unsignedInteger('total_sheets')->default(0);
-    $table->timestamps();
-});
-```
-
-### Import Excel (`app/Imports/CardsImport.php`)
-
-```php
-<?php
-
-namespace App\Imports;
-
-use App\Models\Card;
-use Maatwebsite\Excel\Concerns\ToModel;
-use Maatwebsite\Excel\Concerns\WithHeadingRow;
-use Maatwebsite\Excel\Concerns\WithValidation;
-use Maatwebsite\Excel\Concerns\SkipsEmptyRows;
-
-class CardsImport implements ToModel, WithHeadingRow, WithValidation, SkipsEmptyRows
-{
-    public function model(array $row): Card
-    {
-        return Card::updateOrCreate(
-            ['number' => (string) $row['nomor']],
-            ['name' => $row['nama'] ?? null, 'note' => $row['keterangan'] ?? null],
-        );
-    }
-
-    public function rules(): array
-    {
-        return ['nomor' => ['required']];
-    }
-}
-```
-
-### Tombol Import di Filament (`CardResource` → `ListCards`)
-
-```php
-use Filament\Actions;
-use Filament\Forms\Components\FileUpload;
-use Maatwebsite\Excel\Facades\Excel;
-use App\Imports\CardsImport;
-use Filament\Notifications\Notification;
-
-protected function getHeaderActions(): array
-{
-    return [
-        Actions\CreateAction::make(),
-        Actions\Action::make('import')
-            ->label('Import Excel')
-            ->icon('heroicon-o-arrow-up-tray')
-            ->form([
-                FileUpload::make('file')
-                    ->label('File Excel')
-                    ->acceptedFileTypes([
-                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        'application/vnd.ms-excel',
-                        'text/csv',
-                    ])
-                    ->disk('local')
-                    ->directory('imports')
-                    ->required(),
-            ])
-            ->action(function (array $data) {
-                Excel::import(new CardsImport, storage_path('app/private/' . $data['file']));
-                Notification::make()->title('Import berhasil')->success()->send();
-            }),
-    ];
-}
-```
-
-> Sesuaikan path file dengan disk `local` pada Laravel 12 (`storage/app/private`).
-
-### Layout Calculator (`app/Services/LayoutCalculator.php`)
-
-```php
-<?php
-
-namespace App\Services;
-
-class LayoutCalculator
-{
-    public function calculate(): array
-    {
-        $cfg = config('card');
-        $sw = $cfg['sheet']['width'];  $sh = $cfg['sheet']['height'];
-        $m  = $cfg['sheet']['margin']; $g  = $cfg['sheet']['gap'];
-        $cw = $cfg['card']['width'];   $ch = $cfg['card']['height'];
-
-        $usableW = $sw - 2 * $m;
-        $usableH = $sh - 2 * $m;
-
-        $landscape = $this->grid($usableW, $usableH, $cw, $ch, $g);
-        $portrait  = $this->grid($usableW, $usableH, $ch, $cw, $g);
-
-        $best = ($cfg['sheet']['allow_rotate'] && $portrait['total'] > $landscape['total'])
-            ? $portrait + ['rotated' => true]
-            : $landscape + ['rotated' => false];
-
-        $best['requested'] = $cfg['sheet']['per_sheet'];
-        $best['fits']      = $best['total'] >= $best['requested'];
-
-        return $best;
-    }
-
-    private function grid(float $w, float $h, float $cw, float $ch, float $gap): array
-    {
-        $cols = (int) floor(($w + $gap) / ($cw + $gap));
-        $rows = (int) floor(($h + $gap) / ($ch + $gap));
-
-        return ['cols' => $cols, 'rows' => $rows, 'total' => $cols * $rows,
-                'cell_w' => $cw, 'cell_h' => $ch];
-    }
-}
-```
-
-### QR Code Service (`app/Services/QrCodeService.php`)
-
-```php
-<?php
-
-namespace App\Services;
-
-use Endroid\QrCode\Builder\Builder;
-use Endroid\QrCode\Writer\SvgWriter;
-use Endroid\QrCode\ErrorCorrectionLevel;
-
-class QrCodeService
-{
-    public function svgDataUri(string $content): string
-    {
-        $result = Builder::create()
-            ->writer(new SvgWriter())
-            ->data(config('card.qr.prefix') . $content)
-            ->errorCorrectionLevel(ErrorCorrectionLevel::Medium)
-            ->margin(0)
-            ->build();
-
-        return $result->getDataUri();
-    }
-}
-```
-
-### Template Lembar (`resources/views/pdf/sheet.blade.php`)
-
-```blade
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-    @page { size: {{ config('card.sheet.width') }}mm {{ config('card.sheet.height') }}mm; margin: 0; }
-    body { margin: 0; font-family: sans-serif; }
-    .sheet { position: relative; width: {{ config('card.sheet.width') }}mm;
-             height: {{ config('card.sheet.height') }}mm; page-break-after: always; }
-    .card  { position: absolute; width: {{ $layout['cell_w'] }}mm; height: {{ $layout['cell_h'] }}mm;
-             border: .1mm solid #999; box-sizing: border-box; padding: 3mm; }
-    .qr    { width: {{ config('card.qr.size') }}mm; height: {{ config('card.qr.size') }}mm; }
-    .num   { font-size: 14pt; font-weight: bold; }
-</style>
-</head>
-<body>
-@foreach ($sheets as $sheet)
-    <div class="sheet">
-        @foreach ($sheet as $i => $card)
-            @php
-                $col = $i % $layout['cols'];
-                $row = intdiv($i, $layout['cols']);
-                $x = config('card.sheet.margin') + $col * ($layout['cell_w'] + config('card.sheet.gap'));
-                $y = config('card.sheet.margin') + $row * ($layout['cell_h'] + config('card.sheet.gap'));
-            @endphp
-            <div class="card" style="left: {{ $x }}mm; top: {{ $y }}mm;">
-                <img class="qr" src="{{ $qr->svgDataUri($card->number) }}">
-                <div class="num">{{ $card->number }}</div>
-                <div>{{ $card->name }}</div>
-            </div>
-        @endforeach
-    </div>
-@endforeach
-</body>
-</html>
-```
-
-### Generate PDF
-
-```php
-use Barryvdh\DomPDF\Facade\Pdf;
-
-$layout = app(LayoutCalculator::class)->calculate();
-$perSheet = min($layout['total'], config('card.sheet.per_sheet'));
-$sheets = $cards->chunk($perSheet);
-
-return Pdf::loadView('pdf.sheet', [
-        'sheets' => $sheets,
-        'layout' => $layout,
-        'qr'     => app(QrCodeService::class),
-    ])
-    ->setPaper([0, 0, 480 / 25.4 * 72, 320 / 25.4 * 72]) // mm → pt
-    ->stream('kartu.pdf');
-```
-
-> Untuk presisi layout yang lebih baik (flex/grid, font custom), pertimbangkan `spatie/laravel-pdf` dengan Browsershot.
+- **Keamanan:** route `preview` dan `download` saat ini **tidak** memakai middleware `auth` (baris `->middleware(['auth'])` sedang dikomentari). Aktifkan kembali bila aplikasi dipublikasikan.
+- **Template tidak muncul di PDF?** Pastikan sudah menjalankan `php artisan storage:link` dan file gambar ada di `storage/app/public/templates/`.
+- **Import gagal untuk `.csv`?** Form import saat ini hanya menerima `.xlsx` dan `.xls`. Simpan ulang file CSV sebagai Excel, atau tambahkan MIME `text/csv` pada `acceptedFileTypes` di resource terkait.
+- **Nomor harus unik** per jenis kartu; nomor yang sudah ada akan dilewati saat import.
+- **Jumlah besar:** untuk ribuan kartu, naikkan `memory_limit` dan `max_execution_time` PHP karena DomPDF merender seluruh halaman dalam satu proses.
+- Untuk hasil cetak presisi, atur printer ke **skala 100% / Actual size** tanpa margin tambahan.
 
 ---
-
-## Tips Cetak
-
-- Cetak dengan skala **100%** (Actual Size), matikan *Fit to page*.
-- Pastikan driver printer mendukung ukuran kustom **480 × 320 mm** (atau gunakan kertas SRA3/A3+ lalu potong).
-- Cetak **1 lembar uji** dan ukur kartu dengan penggaris/kaliper sebelum cetak massal.
-- QR sebaiknya minimal **15 × 15 mm** dengan kontras tinggi agar mudah discan.
-- Gunakan crop mark untuk memudahkan pemotongan (`CROP_MARKS=true`).
-
-## Roadmap
-
-- [ ] Template desain kartu (logo, background, font)
-- [ ] Foto per kartu
-- [ ] Cetak sisi depan–belakang (duplex)
-- [ ] Scan & verifikasi QR via endpoint publik
-- [ ] Queue untuk batch berukuran besar (ribuan kartu)
 
 ## Lisensi
 
-MIT
+Proyek internal — sesuaikan lisensi sesuai kebutuhan Anda.
